@@ -5,7 +5,7 @@
 </style></head><body>
 <header><div class="eyebrow">ROSA / CULTURE INTELLIGENCE</div><div class="head"><div><h1>THE CULTURE CALENDAR ✳</h1><p>Toutes les occasions d'avoir quelque chose à raconter.</p></div><div class="topactions"><button class="btn ghost" id="refreshBtn">↻ Actualiser les données</button><button class="btn main" id="addBtn" disabled title="L’ajout partagé sera activé avec l’authentification">＋ Ajouter un événement · bientôt</button></div></div></header>
 <main class="wrap"><div class="toolbar"><div class="nav"><button class="btn" id="prev" aria-label="Mois précédent">←</button><h2 id="month"></h2><button class="btn" id="next" aria-label="Mois suivant">→</button><button class="btn" id="today">Aujourd'hui</button></div><input class="search" id="search" placeholder="⌕ Chercher un événement…" aria-label="Rechercher"></div>
-<div class="legend"><button class="tag marketing" data-family="marketing">● Marronnier marketing</button><button class="tag pop" data-family="pop">● Pop culture</button><button class="tag societe" data-family="societe">● Société</button><span class="counter" id="counter"></span></div>
+<div class="legend"><button class="tag marketing" data-family="marketing">● Marronnier marketing</button><button class="tag pop" data-family="pop">● Pop culture</button><button class="tag societe" data-family="societe">● Société</button><span class="counter" id="counter"></span><span class="counter" id="loadStatus" aria-live="polite">Connexion…</span></div>
 <div class="calendar"><div class="weekdays"><div>LUN</div><div>MAR</div><div>MER</div><div>JEU</div><div>VEN</div><div>SAM</div><div>DIM</div></div><div class="days" id="days"></div></div>
 <div class="foot"><span>✳ Les événements sont chargés depuis notre base Supabase.</span><span>Consultation partagée · Ajout et modification en préparation.</span></div></main>
 <div id="toast" role="status"></div>
@@ -32,8 +32,8 @@ function render(){
     let d=new Date(year,month,i-offset+1),date=iso(d),other=d.getMonth()!==month;
     const found=events.filter(e=>matches(e)&&e.start<=date&&(e.end||e.start)>=date).sort((a,b)=>a.start.localeCompare(b.start)||a.title.localeCompare(b.title));
     html+='<div class="day '+(other?'other ':'')+(date===iso(today)?'today':'')+'"><div class="dayhead"><span class="number">'+d.getDate()+'</span></div><div class="events">';
-    for(const e of found.slice(0,4))html+='<button class="event '+esc(e.family)+'" data-edit="'+esc(e.id)+'" title="'+esc(e.title)+' ('+esc(e.start)+(e.end?' → '+esc(e.end):'')+')">'+(e.start<date?'<span class="continuation">↔ </span>':'')+esc(e.title)+'</button>';
-    if(found.length>4)html+='<button class="more" data-more="'+date+'">+'+(found.length-4)+' autres</button>';
+    for(const e of found)html+='<button class="event '+esc(e.family)+'" data-edit="'+esc(e.id)+'" title="'+esc(e.title)+' ('+esc(e.start)+(e.end?' → '+esc(e.end):'')+')">'+(e.start<date?'<span class="continuation">↔ </span>':'')+esc(e.title)+'</button>';
+
     html+='</div></div>';
   }
   $('days').innerHTML=html;
@@ -44,7 +44,7 @@ async function loadEvents(){
   try{
     while(true){
       let response=await fetch(URL+'/rest/v1/events?select=id,event_name,start_date,end_date,editorial_family,recurrence&order=start_date.asc&offset='+from+'&limit='+size,{
-        headers:{'apikey':KEY,'Authorization':'Bearer '+KEY},cache:'no-store'
+        headers:{'apikey':KEY},cache:'no-store'
       });
       if(!response.ok)throw Error('HTTP '+response.status+' — '+(await response.text()).slice(0,170));
       const batch=await response.json();
@@ -57,11 +57,14 @@ async function loadEvents(){
       id:String(x.id),title:x.event_name,start:x.start_date,end:x.end_date||'',
       family:familyVal(x.editorial_family),recurrence:x.recurrence||'À confirmer'
     }));
+    $('loadStatus').textContent=events.length+' événements synchronisés';
     render();
     if(!events.length)notice('Aucun événement trouvé. Vérifie la politique SELECT dans Supabase.');
   }catch(err){
+    $('loadStatus').textContent='Erreur de chargement';
     render();
     notice('Connexion Supabase impossible : '+err.message);
+    $('loadStatus').title=err.message;
     console.error('ROSA Calendar Supabase:',err);
   }
 }
@@ -69,12 +72,7 @@ $('days').addEventListener('click',e=>{
   const target=e.target.closest('[data-edit],[data-more]');if(!target)return;
   if(target.dataset.edit){
     const item=events.find(x=>x.id===target.dataset.edit);
-    if(item)alert(item.title+'
-'+item.start+(item.end?' → '+item.end:'')+'
-'+({marketing:'Marketing',pop:'Pop culture',societe:'Société'}[item.family])+'
-Récurrence : '+item.recurrence+'
-
-Modification bientôt disponible.');
+    if(item)alert([item.title,item.start+(item.end?' → '+item.end:''),({marketing:'Marketing',pop:'Pop culture',societe:'Société'}[item.family]),'Récurrence : '+item.recurrence,'Modification bientôt disponible.'].join('\n'));
   }else if(target.dataset.more){
     const date=target.dataset.more;
     notice(events.filter(x=>matches(x)&&x.start<=date&&(x.end||x.start)>=date).map(x=>x.title).join(' • ').slice(0,350));
